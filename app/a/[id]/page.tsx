@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import ConfirmAgreementButton from "./ConfirmAgreementButton";
+import DownloadAgreementPdf from "./DownloadAgreementPdf";
 import {
   CalendarDays,
   Check,
@@ -44,6 +45,28 @@ export default async function PublicAgreementPage({
   if (!agreement) {
     notFound();
   }
+  // =========================
+  // PAIEMENTS PUBLICS
+  // =========================
+
+  const {
+    data: publicPayments,
+    error: publicPaymentsError,
+  } = await supabase.rpc(
+    "get_public_agreement_payments",
+    {
+      p_token: token,
+    }
+  );
+
+  if (publicPaymentsError) {
+    console.error(
+      "PUBLIC AGREEMENT PAYMENTS ERROR:",
+      publicPaymentsError
+    );
+  }
+
+  const payments = publicPayments || [];
 
   const totalAmount = Number(agreement.total_amount || 0);
   const depositAmount = Number(agreement.deposit_amount || 0);
@@ -78,6 +101,36 @@ export default async function PublicAgreementPage({
     month: "long",
     year: "numeric",
   });
+  function formatDateTime(date: string | null) {
+  if (!date) {
+    return null;
+  }
+
+  return new Date(date).toLocaleString("fr-FR", {
+    timeZone: "Africa/Dakar",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const clientConfirmedAt = formatDateTime(
+  agreement.confirmed_at
+);
+
+const startedAt = formatDateTime(
+  agreement.started_at
+);
+
+const completedAt = formatDateTime(
+  agreement.completed_at
+);
+
+const cancelledAt = formatDateTime(
+  agreement.cancelled_at
+);
 
   const isConfirmed =
     agreement.confirmation_status === "accepted" ||
@@ -140,7 +193,6 @@ export default async function PublicAgreementPage({
       <header className="border-b border-gray-200/80 bg-white">
         <div className="mx-auto flex h-[68px] max-w-[1050px] items-center justify-between px-4 sm:h-20 sm:px-8">
           <div className="flex items-center gap-2.5 sm:gap-3">
-            {/* Logo temporaire — remplacé plus tard par le vrai logo */}
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#4338CA] shadow-sm sm:h-11 sm:w-11">
               <Check
                 className="h-6 w-6 text-[#B7F34A]"
@@ -243,12 +295,13 @@ export default async function PublicAgreementPage({
           {/* PARTIES */}
           <div className="divide-y divide-gray-100 border-b border-gray-100 sm:grid sm:grid-cols-2 sm:divide-x sm:divide-y-0">
             <Party
-              label="Créateur"
+              label="Prestataire"
               name={
                 agreement.business_name ||
                 agreement.creator_name ||
                 "Professionnel"
               }
+              phone={agreement.creator_phone}
             />
 
             <Party
@@ -316,7 +369,6 @@ export default async function PublicAgreementPage({
               />
             </div>
 
-            {/* PROGRESSION FINANCIÈRE */}
             {totalAmount > 0 && (
               <div className="mt-5 rounded-2xl border border-gray-100 bg-[#FAFAFC] p-4">
                 <div className="flex items-center justify-between gap-4">
@@ -432,12 +484,6 @@ export default async function PublicAgreementPage({
                   )}
                 </div>
               )}
-
-              <p className="mx-auto mt-5 max-w-md text-xs leading-5 text-gray-400">
-                Cet accord reste consultable dans Wóolu afin de
-                conserver les informations et la situation
-                financière enregistrées.
-              </p>
             </div>
           ) : isCompleted ? (
             <div className="text-center">
@@ -451,18 +497,17 @@ export default async function PublicAgreementPage({
 
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
                 La réalisation de cet accord a été indiquée comme
-                terminée. Vous pouvez conserver ce lien pour
-                consulter sa situation.
+                terminée.
               </p>
 
               {remainingAmount > 0 ? (
-                <div className="mx-auto mt-5 max-w-md rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-800 sm:mt-6">
+                <div className="mx-auto mt-5 max-w-md rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-800">
                   Il reste{" "}
                   {remainingAmount.toLocaleString("fr-FR")} FCFA
                   à payer selon les paiements déclarés dans Wóolu.
                 </div>
               ) : (
-                <div className="mx-auto mt-5 max-w-md rounded-2xl border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 sm:mt-6">
+                <div className="mx-auto mt-5 max-w-md rounded-2xl border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
                   ✓ Le montant total de l&apos;accord a été déclaré
                   payé.
                 </div>
@@ -483,7 +528,7 @@ export default async function PublicAgreementPage({
                 actuellement en cours.
               </p>
 
-              <div className="mx-auto mt-5 max-w-sm rounded-2xl bg-indigo-50 px-4 py-3 text-sm font-semibold text-[#4338CA] sm:mt-6">
+              <div className="mx-auto mt-5 max-w-sm rounded-2xl bg-indigo-50 px-4 py-3 text-sm font-semibold text-[#4338CA]">
                 ✓ Confirmation enregistrée dans Wóolu
               </div>
             </div>
@@ -498,12 +543,10 @@ export default async function PublicAgreementPage({
               </h2>
 
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
-                Votre confirmation a bien été enregistrée. Vous
-                pouvez conserver ce lien pour consulter cet accord
-                à tout moment.
+                Votre confirmation a bien été enregistrée.
               </p>
 
-              <div className="mx-auto mt-5 max-w-sm rounded-2xl bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 sm:mt-6">
+              <div className="mx-auto mt-5 max-w-sm rounded-2xl bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
                 ✓ Confirmation enregistrée dans Wóolu
               </div>
             </div>
@@ -539,6 +582,52 @@ export default async function PublicAgreementPage({
           )}
         </section>
 
+        {/* TÉLÉCHARGEMENT PDF */}
+        <section className="mt-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:mt-6 sm:rounded-3xl sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-bold text-gray-900">
+                Conserver une copie
+              </h2>
+
+              <p className="mt-1 text-sm leading-6 text-gray-500">
+                Téléchargez cet accord au format PDF pour le
+                conserver sur votre téléphone ou votre ordinateur.
+              </p>
+            </div>
+
+            <div className="shrink-0">
+              <DownloadAgreementPdf
+                reference={agreement.reference}
+                title={agreement.title}
+                description={agreement.description || ""}
+                creatorName={
+                  agreement.business_name ||
+                  agreement.creator_name ||
+                  "Professionnel"
+                }
+                creatorPhone={agreement.creator_phone}
+                clientName={agreement.client_name || "Client"}
+                clientPhone={agreement.client_phone}
+                totalAmount={totalAmount}
+                depositAmount={depositAmount}
+                paidAmount={paidAmount}
+                remainingAmount={remainingAmount}
+                deliveryDate={formattedDeliveryDate}
+                createdDate={createdDate}
+                confirmationStatus={agreement.confirmation_status}
+                clientConfirmedAt={clientConfirmedAt}
+                startedAt={agreement.started_at}
+                completedAt={agreement.completed_at}
+                cancelledAt={agreement.cancelled_at}
+                cancellationReason={agreement.cancellation_reason}
+                payments={payments}
+                status={publicStatus.label}
+              />
+            </div>
+          </div>
+        </section>
+
         {/* FOOTER */}
         <footer className="py-7 text-center sm:py-8">
           <div className="flex items-center justify-center gap-2 text-sm font-bold text-[#4338CA]">
@@ -565,7 +654,6 @@ function SectionTitle({
   return (
     <div className="flex items-center gap-2 text-[#4338CA]">
       {icon}
-
       <h2 className="text-sm font-bold sm:text-base">
         {title}
       </h2>
